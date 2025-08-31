@@ -13,6 +13,8 @@ When you need to change the Reserved IP:
 3. Create a new Reserved IP in the same region.
 4. Attach the new Reserved IP to the server.
 
+<br />
+
 How to do these?  
 [English Version](https://github.com/hanidabir/static-ip-rotation/blob/main/docs/en.md) | [نسخه فارسی](https://github.com/hanidabir/static-ip-rotation/blob/main/docs/fa.md)
 
