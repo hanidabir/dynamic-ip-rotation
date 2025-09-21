@@ -1,102 +1,164 @@
-## مقدمه
+## معرفی کلی
 
-هر سرور (Instance) در Vultr یک آدرس **main IP** اصلی دارد که غیرقابل حذف یا تغییر است؛ بنابراین، برای تغییر خودکار آدرس IP متصل به سرور با API، باید از **Reserved IP** استفاده کنیم.
-آدرسی که باید جداگانه خریده و آن را به سرور وصل (attach) یا جدا (detach) کنیم تا کنترل کامل IP سرور در دست ما باشد.
+هر سرور Vultr به طور پیش‌فرض یک **IP عمومی اصلی** دارد که قابل حذف یا تغییر نیست. برای مدیریت بهتر و ایجاد انعطاف‌پذیری در آدرس‌های IP سرور، از **Reserved IPها** استفاده می‌شود.
 
-***
-
-## خلاصه روند کار
-
-1. **خرید و ساخت Reserved IP** در منطقه سرور خودتان
-2. **اتصال Reserved IP به سرور**  
-3. **تنظیم سرویس‌ها روی Reserved IP** (به جای main IP)  
-4. **برای تغییر IP در آینده:**  
-   - ابتدا Reserved IP فعلی را با API جدا کنید.
-   - سپس، Reserved IP جدید را با API وصل کنید.
-   - سرور اصلی و main IP بدون تغییر باقی می‌مانند و سرویس‌ها از طریق Reserved IP جدید ادامه می‌یابند.
+یک **Reserved IP**، یک آدرس IPv4 عمومی اضافی است که می‌توانید آن را از طریق API خریداری، متصل و جدا کنید. با استفاده از Reserved IP می‌توانید بدون قطعی سرویس، IP اختصاصی سرور را تغییر دهید.
 
 ***
 
-## مراحل کامل استفاده از API Vultr
+## مراحل کلی کار
 
-### ۱. گرفتن API Key
-
-- وارد حساب Vultr شوید، بخش Account > API.
-- یک API Key جدید بسازید یا کلید موجود را کپی کنید.
-- مطمئن شوید کلید دسترسی به مدیریت Reserved IP و سرورها را دارد.
+1. **تولید کلید API**: یک کلید API با مجوزهای کافی بسازید.
+2. **ساخت Reserved IP**: یک Reserved IP در منطقه سرور خود ایجاد کنید.
+3. **وصل کردن Reserved IP**: آن را به سرور متصل کنید.
+4. **پیکربندی سرویس‌ها**: نرم‌افزارها را روی IP جدید تنظیم کنید.
+5. **برای تغییر IP بعدی**:
+   - (در صورت نیاز) detach کردن Reserved IP فعلی از سرور
+   - (در صورت نیاز) attach کردن Reserved IP جدید
+6. **حذف Reserved IP**: اگر دیگر نیاز ندارید، پاک کنید.
 
 ***
 
-### ۲. ساخت (خرید) Reserved IP جدید
+## 1. تولید کلید API
 
-درخواستی با دستور زیر برای ساخت Reserved IP ارسال کنید:
+- به داشبورد Vultr > حساب > API بروید.
+- یک کلید جدید بسازید یا از کلید موجود استفاده کنید.
+- کلید را امن نگه دارید.
 
-```bash
-curl -X POST "https://api.vultr.com/v2/reserved-ips" \
-     -H "Authorization: Bearer {API_KEY}" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "region": "کد-ناحیه-سرور",
-           "ip_type": "v4",
-           "label": "Reserved IP من"
-         }'
+***
+
+## 2. گرفتن لیست سرورها (Instances)
+
+```powershell
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+}
+
+(Invoke-RestMethod -Uri "https://api.vultr.com/v2/instances" -Headers $headers -Method GET).instances | Format-List id, label, main_ip, region
 ```
 
-- به جای `"کد-ناحیه-سرور"` منطقه سرور خود را قرار دهید (مثلاً `ewr` یا `sfo`).  
-- در پاسخ، شناسه Reserved IP ساخته شده (reserved_ip_id) را دریافت خواهید کرد.
+نمونه خروجی:
 
-***
-
-### ۳. اتصال Reserved IP به سرور
-
-```bash
-curl -X POST "https://api.vultr.com/v2/reserved-ips/{reserved_ip_id}/attach" \
-     -H "Authorization: Bearer {API_KEY}" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "instance_id": "شناسه-سرور"
-         }'
 ```
-
-- شناسه Reserved IP را جایگزین `{reserved_ip_id}` کنید.  
-- شناسه سروری که می‌خواهید IP به آن متصل شود را جایگزین `instance_id` نمایید.
-
-***
-
-### ۴. جدا کردن Reserved IP از سرور
-
-برای جدا کردن IP فعلی هنگام تغییر:
-
-```bash
-curl -X POST "https://api.vultr.com/v2/reserved-ips/{reserved_ip_id}/detach" \
-     -H "Authorization: Bearer {API_KEY}"
+id      : abcdef12-3456-7890-abcd-ef1234567890
+label   : my-server-1
+main_ip : 192.0.2.1
+region  : ewr
 ```
 
 ***
 
-### ۵. آزادسازی (حذف) Reserved IP (اختیاری)
+## 3. بررسی وضعیت اتصال Reserved IP
 
-اگر می‌خواهید IP را آزاد کنید و هزینه آن دیگر پرداخت نشود:
+```powershell
+$reservedIP = Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID" -Headers $headers -Method GET
+$reservedIP.reserved_ip | Format-List id, region, ip_type, subnet, subnet_size, label, instance_id
+```
 
-```bash
-curl -X DELETE "https://api.vultr.com/v2/reserved-ips/{reserved_ip_id}" \
-     -H "Authorization: Bearer {API_KEY}"
+نمونه خروجی:
+
+```
+id          : RES_ID
+region      : ewr
+ip_type     : v4
+subnet      : 192.0.2.100
+subnet_size : 32
+label       : My Reserved IP
+instance_id : abcdef12-3456-7890-abcd-ef1234567890
+```
+
+اگر `instance_id` با شناسه سرور شما یکی باشد، یعنی Reserved IP متصل است.
+
+***
+
+## 4. ساخت Reserved IP
+
+```powershell
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+    "Content-Type" = "application/json"
+}
+
+$body = @{
+    region = "your-region-code"
+    ip_type = "v4"
+    label = "My Reserved IP"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips" -Method POST -Headers $headers -Body $body
+```
+
+***
+
+## 5. وصل کردن Reserved IP به سرور
+
+```powershell
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+    "Content-Type" = "application/json"
+}
+
+$body = @{
+    instance_id = "YOUR_INSTANCE_ID"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID/attach" -Method POST -Headers $headers -Body $body
+```
+
+***
+
+## 6. جدا کردن Reserved IP از سرور
+
+```powershell
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+}
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID/detach" -Method POST -Headers $headers
+```
+
+***
+
+## 7. حذف (Delete) Reserved IP
+
+```powershell
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+}
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID" -Method DELETE -Headers $headers
+```
+
+***
+
+## 8. بررسی حذف Reserved IP
+
+```powershell
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID" -Headers $headers -Method GET
+```
+
+اگر IP حذف شده باشد، پاسخ به صورت خطا و پیام مانند زیر خواهد بود:
+
+```
+error           error_type
+-----           ----------
+reserved ip not found
 ```
 
 ***
 
 ## نکات مهم
 
-- ‌به ازای هر سرور، main IP سرور همواره ثابت و غیرقابل حذف است.  
-- هر Reserved IP، هزینه جداگانه دارد.  
-- برای دسترسی به سرویس‌های خود از Reserved IP استفاده کنید (مثلاً تنظیمات وب‌سرور، فایروال و DNS).  
-- تغییر IP با detach و attach Reserved IP کاملاً بدون قطعی سرویس انجام می‌شود.  
-- بعد از هر درخواست API، پاسخ را بررسی کنید تا از موفقیت عمل آگاهی پیدا کنید.
+- هر سرور یک IP اصلی دارد که قابل حذف یا تغییر نیست.
+- هر Reserved IP، هزینه اضافه در بر دارد.
+- با attach/detach Reserved IP بدون قطعی قابل تغییر است.
+- پاسخ API را بعد از هر درخواست حتما بررسی کنید.
+- جایگزین کردن تمامی مقادیر `YOUR_API_KEY`، `RESERVED_IP_ID`، `YOUR_INSTANCE_ID` و `your-region-code` الزامی است.
 
 ***
 
-## منابع و مستندات
+## لینک‌های مفید
 
-- [مستندات رسمی Vultr API (انگلیسی)](https://www.vultr.com/api/)  
-- [مستندات Reserved IP در Vultr](https://docs.vultr.com/products/network/reserved-ips)  
-- [راهنمای جدا کردن Reserved IP](https://docs.vultr.com/products/network/reserved-ips/management/detachment)
+- مستندات API ولتر: https://www.vultr.com/api/
+- مستندات Reserved IP: https://docs.vultr.com/products/network/reserved-ips
+- راهنمای جداکردن Reserved IP: https://docs.vultr.com/products/network/reserved-ips/management/detachment
