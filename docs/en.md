@@ -1,102 +1,172 @@
 ## Overview
 
-Every Vultr server (instance) comes with a default **main public IP** which cannot be removed or replaced. However, to achieve flexible IP management, including changing the IP address attached to your server without downtime, you can use **Reserved IPs**.
+Every Vultr server (instance) has a default **main public IP** which cannot be removed or replaced. To manage IP addresses flexibly, including changing IPs without downtime, use **Reserved IPs**.
 
-A **Reserved IP** is an additional public IPv4 address that you can purchase, attach to a server, and detach as needed via Vultr's API. By routing your services through the Reserved IP, you gain the ability to switch IPs programmatically without affecting your server’s main IP.
+A **Reserved IP** is an additional public IPv4 address you can create and manage via Vultr's API. By routing services through a Reserved IP, you can switch IPs programmatically without affecting your server’s main IP.
 
-***
+---
 
 ## Workflow Summary
 
-1. **Reserved IP purchase and creation**: Buy/create a Reserved IP in the same region as your server.
-2. **Attach Reserved IP**: Link this Reserved IP to your server.
-3. **Configure your services**: Update your application or server configurations to use the Reserved IP instead of the main IP.
-4. **To change IP later**:  
-   - Detach the current Reserved IP from the server via API.  
-   - Attach a new Reserved IP via API.  
-   - Your services continue clicking to the new Reserved IP with no downtime related to main IP changes.
+1. **Generate an API Key**: Create an API key with sufficient permissions in Vultr dashboard.
+2. **Create a Reserved IP**: Buy/create a Reserved IP in the same region as your server.
+3. **Attach Reserved IP**: Link the Reserved IP to your server.
+4. **Configure your services**: Update your apps to use the Reserved IP.
+5. **Change IP later**:
+   - Detach the current Reserved IP from the server.
+   - Attach a new Reserved IP.
+6. **Delete Reserved IP**: Release the Reserved IP if no longer needed.
 
-***
+---
 
-## Detailed Steps with Vultr API
+## 1. Generate an API Key
 
-### 1. Generate an API Key
+- Go to Vultr dashboard > Account > API.
+- Generate or reuse an API key.
+- Save it securely; it won’t be shown again.
 
-- Go to your Vultr dashboard > Account > API.  
-- Generate a new API key or use an existing one.  
-- Ensure the key has sufficient permissions to manage Reserved IPs and servers.
+---
 
-***
-
-### 2. Create (Purchase) a Reserved IP
-
-Send a POST request to create a new Reserved IP in the desired region:
+## 2. List Instances (Servers)
 
 ```bash
-curl -X POST "https://api.vultr.com/v2/reserved-ips" \
-    -H "Authorization: Bearer {YOUR_API_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '{
-          "region": "your-region-code",
-          "ip_type": "v4",
-          "label": "My Reserved IP"
-        }'
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+}
+
+(Invoke-RestMethod -Uri "https://api.vultr.com/v2/instances" -Headers $headers -Method GET).instances | Format-List id, label, main_ip, region
 ```
 
-- Replace `"your-region-code"` with your server’s region (e.g., `ewr`, `fra`, `sfo`).
-- The response will include the `reserved_ip_id` to use in subsequent API calls.
+Example output:
 
-***
+```
+id      : abcdef12-3456-7890-abcd-ef1234567890
+label   : my-server-1
+main_ip : 192.0.2.1
+region  : ewr
 
-### 3. Attach Reserved IP to Your Server
+id      : 12345678-abcd-ef12-3456-7890abcdef12
+label   : my-server-2
+main_ip : 192.0.2.2
+region  : ewr
+```
 
-Attach the Reserved IP to your server instance to make it active:
+---
+
+## 3. Check Reserved IP Connection Status
 
 ```bash
-curl -X POST "https://api.vultr.com/v2/reserved-ips/{reserved_ip_id}/attach" \
-    -H "Authorization: Bearer {YOUR_API_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '{
-          "instance_id": "your-instance-id"
-        }'
+$reservedIP = Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID" -Headers $headers -Method GET
+$reservedIP.reserved_ip | Format-List id, region, ip_type, subnet, subnet_size, label, instance_id
 ```
 
-- Replace `{reserved_ip_id}` with the ID from the Reserved IP creation step.
-- Replace `"your-instance-id"` with your server’s ID.
+Example output:
 
-***
+```
+id          : RES_ID
+region      : ewr
+ip_type     : v4
+subnet      : 192.0.2.100
+subnet_size : 32
+label       : My Reserved IP
+instance_id : abcdef12-3456-7890-abcd-ef1234567890
+```
 
-### 4. Detach Reserved IP from Server
+If `instance_id` matches your server’s ID, the Reserved IP is attached.
 
-If you want to change IPs later, detach the current Reserved IP from your server:
+---
+
+## 4. Create (Purchase) a Reserved IP
 
 ```bash
-curl -X POST "https://api.vultr.com/v2/reserved-ips/{reserved_ip_id}/detach" \
-    -H "Authorization: Bearer {YOUR_API_KEY}"
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+    "Content-Type" = "application/json"
+}
+
+$body = @{
+    region = "your-region-code"
+    ip_type = "v4"
+    label = "My Reserved IP"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips" -Method POST -Headers $headers -Body $body
 ```
 
-***
+---
 
-### 5. Delete/Release Reserved IP (Optional)
-
-If you want to permanently release the Reserved IP so you no longer pay for it:
+## 5. Attach Reserved IP to a Server
 
 ```bash
-curl -X DELETE "https://api.vultr.com/v2/reserved-ips/{reserved_ip_id}" \
-    -H "Authorization: Bearer {YOUR_API_KEY}"
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+    "Content-Type" = "application/json"
+}
+
+$body = @{
+    instance_id = "YOUR_INSTANCE_ID"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID/attach" -Method POST -Headers $headers -Body $body
 ```
 
-***
+Expected output: _Empty response means success._
+
+---
+
+## 6. Detach Reserved IP from a Server
+
+```bash
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+}
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID/detach" -Method POST -Headers $headers
+```
+
+Empty response indicates success.
+
+---
+
+## 7. Delete Reserved IP (Release)
+
+```bash
+$headers = @{
+    "Authorization" = "Bearer YOUR_API_KEY"
+}
+
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID" -Method DELETE -Headers $headers
+```
+
+Empty response indicates success. This stops billing for the Reserved IP.
+
+---
+
+## 8. Check Reserved IP Deletion
+
+```bash
+Invoke-RestMethod -Uri "https://api.vultr.com/v2/reserved-ips/RESERVED_IP_ID" -Headers $headers -Method GET
+```
+
+If the Reserved IP is deleted, response is an error such as:
+
+```
+error             error_type
+-----             ----------
+reserved ip not found
+```
+
+---
 
 ## Important Notes
 
-- **Main IP cannot be removed:** Your server always has a permanent main IP which cannot be replaced or deleted.
-- **Reserved IP comes with additional cost** and is billed separately.
-- Use Reserved IPs to configure your applications (e.g., bind web server, database listeners, firewall rules) to ensure all traffic flows via the Reserved IP.
-- Changing IPs through Reserved IP attach/detach does not affect your server uptime or require server restarts.
-- Always check API responses for errors after each request.
+- Main IP of your server **cannot** be changed or deleted.
+- Reserved IPs are billed separately.
+- Attach and detach Reserved IPs programmatically to avoid downtime.
+- Always verify API response to catch errors.
+- Replace all placeholders (`YOUR_API_KEY`, `RESERVED_IP_ID`, `YOUR_INSTANCE_ID`, `your-region-code`) with your actual values.
 
-***
+---
 
 ## Useful Links
 
